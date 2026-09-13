@@ -19,13 +19,10 @@ def get_page():
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/122.0.0.0 Safari/537.36"
-        ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "en-US,en;q=0.9",
+            "Chrome/140.0.0.0 Safari/537.36"
+        )
     }
     response = requests.get(URL, headers=headers, timeout=30)
-    print(f"📡 HTTP Status Code: {response.status_code}")
     response.raise_for_status()
     return response.text
 
@@ -34,51 +31,63 @@ def extract_sydney(html):
     soup = BeautifulSoup(html, "html.parser")
     page_text = soup.get_text(" ", strip=True)
 
-    # Ambil Tanggal
+    # 1. AMBIL TANGGAL HARI INI
     date_match = re.search(
-        r"(\d{1,2}[\s\-/]+[A-Za-z]+[\s\-/]+\d{4}|\d{4}-\d{2}-\d{2})",
-        page_text
+        r"(Sunday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday),\s+([A-Za-z]+\s+\d{1,2}\s+\d{4})",
+        page_text,
+        re.IGNORECASE,
     )
-    result_date = date_match.group(1) if date_match else "Today"
+    result_date = date_match.group(0) if date_match else "Today"
 
-    # Ambil semua teks angka 4 digit
-    raw_numbers = []
-    for elem in soup.find_all(True):
-        text = elem.get_text(strip=True)
-        if re.match(r"^\d{4}$", text):
-            raw_numbers.append(text)
+    # 2. EKSTRAKSI ANGKA DARI NAMA FILE GAMBAR BOLA (0-9)
+    digits = []
+    for img in soup.find_all("img"):
+        src = img.get("src") or img.get("data-src") or ""
+        # Mencari pola gambar digit (misal: 0.gif, ball_1.png, 2.jpg, dst)
+        match = re.search(r"(\d)\.(?:jpg|jpeg|png|gif)", src, re.IGNORECASE)
+        if match:
+            digits.append(match.group(1))
 
-    # Filter angka unik berurutan
-    clean_numbers = []
-    for num in raw_numbers:
-        if not clean_numbers or clean_numbers[-1] != num:
-            clean_numbers.append(num)
+    # Jika parser src gambar tidak menemukan, fallback cari text langsung
+    if len(digits) < 30:
+        digits = []
+        for img in soup.find_all("img"):
+            alt = img.get("alt") or ""
+            if alt.isdigit() and len(alt) == 1:
+                digits.append(alt)
 
-    print(f"🔍 Digit angka 4D terdeteksi: {clean_numbers}")
+    print(f"🔍 Digit terdeteksi total: {len(digits)}")
 
-    if len(clean_numbers) < 1:
-        raise RuntimeError(f"Gagal mengambil angka! Halaman tidak mengembalikan pola 4D. Total ditemukan: {len(clean_numbers)}")
+    if len(digits) < 30:
+        raise RuntimeError(
+            f"Digit result Sydney tidak lengkap. Ditemukan {len(digits)} digit, minimal 30 digit (5 prize x 6 digit)."
+        )
 
-    first = clean_numbers[0]
-    second = clean_numbers[1] if len(clean_numbers) > 1 else "----"
-    third = clean_numbers[2] if len(clean_numbers) > 2 else "----"
-    lucky = clean_numbers[3:8] if len(clean_numbers) >= 8 else clean_numbers[3:]
-    consolation = clean_numbers[8:13] if len(clean_numbers) >= 13 else []
+    # Mengambil 5 Prize Pertama (Tampilan Hari Ini)
+    # 1st Prize = 6 digit
+    # 2nd Prize = 6 digit
+    # 3rd Prize = 6 digit
+    # Starter   = 6 digit
+    # Consolation = 6 digit
+    first_6d = "".join(digits[0:6])
+    second_6d = "".join(digits[6:12])
+    third_6d = "".join(digits[12:18])
+    starter_6d = "".join(digits[18:24])
+    consolation_6d = "".join(digits[24:30])
 
+    # Ambil 4 digit terakhir untuk format 4D standar
     return {
         "date": result_date,
-        "first": first,
-        "second": second,
-        "third": third,
-        "lucky": lucky,
-        "consolation": consolation
+        "first": first_6d[-4:],
+        "second": second_6d[-4:],
+        "third": third_6d[-4:],
+        "starter": starter_6d[-4:],
+        "consolation": consolation_6d[-4:],
+        "first_full": first_6d,
     }
 
 
 def format_message(result):
-    lucky_text = "\n".join(f"{i + 1}. {num}" for i, num in enumerate(result["lucky"])) if result["lucky"] else "-"
-    consolation_text = "\n".join(f"{i + 1}. {num}" for i, num in enumerate(result["consolation"])) if result["consolation"] else "-"
-
     return f"""🇦🇺 SYDNEY POOLS RESULT
 
 📅 {result['date']}
@@ -92,11 +101,11 @@ def format_message(result):
 🥉 3RD PRIZE
 {result['third']}
 
-🍀 LUCKY PRIZES
-{lucky_text}
+🍀 STARTER PRIZE
+{result['starter']}
 
-🎁 CONSOLATION PRIZES
-{consolation_text}"""
+🎁 CONSOLATION
+{result['consolation']}"""
 
 
 def send_telegram(message):
@@ -116,7 +125,11 @@ def main():
     result = extract_sydney(html)
 
     print(f"📅 Date: {result['date']}")
-    print(f"🥇 1st: {result['first']}")
+    print(f"🥇 1st (4D): {result['first']} (6D Full: {result['first_full']})")
+    print(f"🥈 2nd (4D): {result['second']}")
+    print(f"🥉 3rd (4D): {result['third']}")
+    print(f"🍀 Starter: {result['starter']}")
+    print(f"🎁 Consolation: {result['consolation']}")
 
     last_result = None
     if os.path.exists(STATE_FILE):
@@ -127,7 +140,7 @@ def main():
             pass
 
     if last_result == result:
-        print("⛔ Result Sydney Pools sama. Tidak ada pesan dikirim.")
+        print("⛔ Result Sydney Pools sama. Skip kirim Telegram.")
         return
 
     msg = format_message(result)
@@ -137,7 +150,7 @@ def main():
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
 
-    print("✅ Result Sydney Pools berhasil dikirim!")
+    print("✅ Result Sydney Pools berhasil dikirim dan disimpan!")
 
 
 if __name__ == "__main__":
