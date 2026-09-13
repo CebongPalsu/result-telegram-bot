@@ -59,8 +59,6 @@ def extract_sydney(html):
     print(f"🔍 Total digit terdeteksi: {len(digits)}")
 
     # 3. KOREKSI PERGESERAN DIGIT IKLAN ATAS
-    # Bola resmi Sydney selalu berjumlah tepat 30 digit (5 Prize x 6 Digit).
-    # Mengambil 30 digit paling akhir membuang digit sampah iklan yang lolos di atas.
     if len(digits) > 30:
         digits = digits[-30:]
 
