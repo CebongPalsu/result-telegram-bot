@@ -39,43 +39,48 @@ def extract_sydney(html):
     )
     result_date = date_match.group(0) if date_match else "Today"
 
-    # 2. FILTER KHUSUS GAMBAR BOLA (ABAIKAN KATA/GAMBAR '1st', '2nd', '3rd', 'BANNER')
-    balls = []
+    # 2. EKSTRAKSI ANGKA BOLA DARI GAMBAR
+    digits = []
     for img in soup.find_all("img"):
         src = img.get("src") or img.get("data-src") or ""
         alt = img.get("alt") or ""
-        
-        # Filter ketat elemen non-bola (banner, logo, ikon prize 1st/2nd/3rd)
         src_lower = src.lower()
-        if any(bad in src_lower for bad in ["banner", "logo", "party", "casino", "titan", "noble", "header", "1st", "2nd", "3rd", "st.", "nd.", "rd."]):
+        
+        # Filter murni banner iklan
+        if any(bad in src_lower for bad in ["banner", "partycasino", "casinolasvegas", "titancasino", "noblecasino", "captaincooks", "cleopatra", "virgin"]):
             continue
-            
-        # Regex hanya mengambil file bola angka murni (contoh: 0.gif, ball_0.png, b0.png, /0.jpg)
-        match = re.search(r"(?:/|ball[s_-]?|^)(\d)\.(?:jpg|jpeg|png|gif)", src, re.IGNORECASE)
+
+        # Cari digit angka di nama file gambar (contoh: 0.gif, ball1.png, b_2.jpg, dst)
+        match = re.search(r"(\d)\.(?:jpg|jpeg|png|gif)", src, re.IGNORECASE)
         if match:
-            balls.append(match.group(1))
+            digits.append(match.group(1))
         elif alt.isdigit() and len(alt) == 1:
-            balls.append(alt)
+            digits.append(alt)
 
-    print(f"🔍 Digit bola murni terdeteksi ({len(balls)} digit): {balls}")
+    print(f"🔍 Digit bola terdeteksi: {len(digits)}")
 
-    if len(balls) < 30:
-        raise RuntimeError(f"Gagal memparsing bola Sydney. Terbaca {len(balls)} digit, butuh minimal 30.")
+    if len(digits) < 30:
+        raise RuntimeError(f"Gagal memparsing bola Sydney. Terbaca {len(digits)} digit, butuh minimal 30.")
 
-    # 3. AMBIL FORMAT 6D UTUH SESUAI TAMPILAN WEBSITE
-    first_6d = "".join(balls[0:6])       # 026929
-    second_6d = "".join(balls[6:12])     # 776745
-    third_6d = "".join(balls[12:18])    # 049712
-    starter_6d = "".join(balls[18:24])  # 657604
-    consolation_6d = "".join(balls[24:30]) # 072884
+    # Ambil 30 digit pertama (5 Prize x 6 Digit)
+    # Jika ada digit iklan header yang lolos di depan, kita sesuaikan urutan 6D-nya
+    prizes = []
+    for i in range(0, len(digits), 6):
+        group = "".join(digits[i:i+6])
+        if len(group) == 6:
+            prizes.append(group)
+
+    # Pastikan kita mendapat 5 prize utama
+    if len(prizes) < 5:
+        raise RuntimeError(f"Gagal menyusun kelompok 6D. Hanya terbentuk {len(prizes)} prize.")
 
     return {
         "date": result_date,
-        "first_6d": first_6d,
-        "second_6d": second_6d,
-        "third_6d": third_6d,
-        "starter_6d": starter_6d,
-        "consolation_6d": consolation_6d,
+        "first_6d": prizes[0],
+        "second_6d": prizes[1],
+        "third_6d": prizes[2],
+        "starter_6d": prizes[3],
+        "consolation_6d": prizes[4],
     }
 
 
@@ -119,7 +124,6 @@ def main():
     print(f"📅 Date: {result['date']}")
     print(f"🥇 1st Prize (6D): {result['first_6d']}")
     print(f"🥈 2nd Prize (6D): {result['second_6d']}")
-    print(f"🥉 3rd Prize (6D): {result['third_6d']}")
 
     last_result = None
     if os.path.exists(STATE_FILE):
