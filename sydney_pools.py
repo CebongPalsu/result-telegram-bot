@@ -27,6 +27,22 @@ def get_page():
     return response.text
 
 
+def extract_digits_from_element(element):
+    """Mengambil digit bola bernomor hanya dari dalam satu elemen baris/tabel tertentu."""
+    digits = []
+    for img in element.find_all("img"):
+        src = img.get("src") or img.get("data-src") or ""
+        alt = img.get("alt") or ""
+        
+        # Cari pola angka 0-9 pada nama file gambar
+        match = re.search(r"(\d)\.(?:jpg|jpeg|png|gif)", src, re.IGNORECASE)
+        if match:
+            digits.append(match.group(1))
+        elif alt.isdigit() and len(alt) == 1:
+            digits.append(alt)
+    return "".join(digits)
+
+
 def extract_sydney(html):
     soup = BeautifulSoup(html, "html.parser")
     page_text = soup.get_text(" ", strip=True)
@@ -39,60 +55,77 @@ def extract_sydney(html):
     )
     result_date = date_match.group(0) if date_match else "Today"
 
-    # 2. EKSTRAKSI HANYA GAMBAR BOLA ANGKA (FILTER STRICT)
-    digits = []
+    prizes = {
+        "first": "",
+        "second": "",
+        "third": "",
+        "starter": "",
+        "consolation": ""
+    }
+
+    # 2. EKSTRAKSI BERDASARKAN BARIS TABEL (TR / DIV)
+    rows = soup.find_all(["tr", "div"])
     
-    # Mencari gambar bola yang biasanya berada di dalam folder khusus (misal /balls/, /images/, /ball/)
-    # Atau nama file berupa 1 digit saja (contoh: 0.gif, 2.jpg, b0.png)
-    for img in soup.find_all("img"):
-        src = img.get("src") or img.get("data-src") or ""
-        alt = img.get("alt") or ""
+    for row in rows:
+        row_text = row.get_text(" ", strip=True).lower()
         
-        # Abaikan gambar iklan / banner / logo
-        if any(bad in src.lower() for bad in ["banner", "logo", "party", "casino", "titan", "noble"]):
-            continue
+        if "1st prize" in row_text and not prizes["first"]:
+            digits = extract_digits_from_element(row)
+            if len(digits) >= 6:
+                prizes["first"] = digits[:6]
 
-        # Regex ketat: mencari nama file digit bola tunggal
-        match = re.search(r"(?:/|ball[s_-]?|^)(\d)\.(?:jpg|jpeg|png|gif)", src, re.IGNORECASE)
-        if match:
-            digits.append(match.group(1))
-        elif alt.isdigit() and len(alt) == 1:
-            digits.append(alt)
+        elif "2nd prize" in row_text and not prizes["second"]:
+            digits = extract_digits_from_element(row)
+            if len(digits) >= 6:
+                prizes["second"] = digits[:6]
 
-    print(f"🔍 Total bola terdeteksi: {len(digits)}")
+        elif "3rd prize" in row_text and not prizes["third"]:
+            digits = extract_digits_from_element(row)
+            if len(digits) >= 6:
+                prizes["third"] = digits[:6]
 
-    if len(digits) < 30:
-        # Fallback jika struktur URL gambar bola polos (contoh: .../0.gif)
-        digits = []
+        elif "starter" in row_text and not prizes["starter"]:
+            digits = extract_digits_from_element(row)
+            if len(digits) >= 6:
+                prizes["starter"] = digits[:6]
+
+        elif "consolation" in row_text and not prizes["consolation"]:
+            digits = extract_digits_from_element(row)
+            if len(digits) >= 6:
+                prizes["consolation"] = digits[:6]
+
+    # Fallback jika selector baris tidak menemukan secara spesifik
+    if not prizes["first"]:
+        all_digits = []
         for img in soup.find_all("img"):
             src = img.get("src") or ""
-            # Ambil digit terakhir sebelum ekstensi file gambar
-            match = re.search(r"(\d)\.(?:gif|png|jpg)", src, re.IGNORECASE)
-            if match and not any(bad in src.lower() for bad in ["banner", "party", "casino"]):
-                digits.append(match.group(1))
+            if any(bad in src.lower() for bad in ["banner", "logo", "party", "casino", "titan"]):
+                continue
+            match = re.search(r"(\d)\.(?:jpg|jpeg|png|gif)", src, re.IGNORECASE)
+            if match:
+                all_digits.append(match.group(1))
 
-    if len(digits) < 30:
-        raise RuntimeError(
-            f"Digit result Sydney tidak lengkap. Ditemukan {len(digits)} digit, seharusnya minimal 30."
-        )
+        if len(all_digits) >= 30:
+            prizes["first"] = "".join(all_digits[0:6])
+            prizes["second"] = "".join(all_digits[6:12])
+            prizes["third"] = "".join(all_digits[12:18])
+            prizes["starter"] = "".join(all_digits[18:24])
+            prizes["consolation"] = "".join(all_digits[24:30])
 
-    # 5 Prize Pertama (Hari Ini): 1st, 2nd, 3rd, Starter, Consolation (Masing-masing 6 digit)
-    first_6d = "".join(digits[0:6])
-    second_6d = "".join(digits[6:12])
-    third_6d = "".join(digits[12:18])
-    starter_6d = "".join(digits[18:24])
-    consolation_6d = "".join(digits[24:30])
+    if not prizes["first"] or len(prizes["first"]) < 6:
+        raise RuntimeError("Gagal memparsing angka Sydney Pools dengan tepat.")
 
+    # Ambil 4 digit terakhir (4D)
     return {
         "date": result_date,
-        "first": first_6d[-4:],        # 4D (misal 6929)
-        "second": second_6d[-4:],      # 4D
-        "third": third_6d[-4:],        # 4D
-        "starter": starter_6d[-4:],    # 4D
-        "consolation": consolation_6d[-4:], # 4D
-        "first_full": first_6d,        # 6D Full (026929)
-        "second_full": second_6d,
-        "third_full": third_6d,
+        "first": prizes["first"][-4:],
+        "second": prizes["second"][-4:],
+        "third": prizes["third"][-4:],
+        "starter": prizes["starter"][-4:],
+        "consolation": prizes["consolation"][-4:],
+        "first_full": prizes["first"],
+        "second_full": prizes["second"],
+        "third_full": prizes["third"],
     }
 
 
@@ -134,9 +167,9 @@ def main():
     result = extract_sydney(html)
 
     print(f"📅 Date: {result['date']}")
-    print(f"🥇 1st Prize Full (6D): {result['first_full']} -> 4D: {result['first']}")
-    print(f"🥈 2nd Prize Full (6D): {result['second_full']} -> 4D: {result['second']}")
-    print(f"🥉 3rd Prize Full (6D): {result['third_full']} -> 4D: {result['third']}")
+    print(f"🥇 1st Prize (6D): {result['first_full']} -> 4D: {result['first']}")
+    print(f"🥈 2nd Prize (6D): {result['second_full']} -> 4D: {result['second']}")
+    print(f"🥉 3rd Prize (6D): {result['third_full']} -> 4D: {result['third']}")
 
     last_result = None
     if os.path.exists(STATE_FILE):
