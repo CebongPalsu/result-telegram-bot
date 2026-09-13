@@ -27,15 +27,6 @@ def get_page():
     return response.text
 
 
-def get_digit_from_src(src_path):
-    """Mengekstrak 1 digit angka dari nama file gambar bola (contoh: /images/b6.gif, 9.jpg, dll)."""
-    # Regex strict hanya ambil digit yang berdiri sendiri sebelum ekstensi file
-    match = re.search(r"(?:[^\d]|^)(\d)\.(?:jpg|jpeg|png|gif)", src_path, re.IGNORECASE)
-    if match:
-        return match.group(1)
-    return None
-
-
 def extract_sydney(html):
     soup = BeautifulSoup(html, "html.parser")
     page_text = soup.get_text(" ", strip=True)
@@ -48,70 +39,65 @@ def extract_sydney(html):
     )
     result_date = date_match.group(0) if date_match else "Today"
 
-    # 2. CARI KUMPULAN BOLA HASIL RESULT
-    # Ambil semua tag <img> yang BUKAN banner/iklan
+    # 2. FILTER KHUSUS GAMBAR BOLA (ABAIKAN KATA/GAMBAR '1st', '2nd', '3rd', 'BANNER')
     balls = []
     for img in soup.find_all("img"):
         src = img.get("src") or img.get("data-src") or ""
+        alt = img.get("alt") or ""
         
-        # Filter iklan & header logo
-        if any(bad in src.lower() for bad in ["banner", "logo", "party", "casino", "titan", "noble", "header"]):
+        # Filter ketat elemen non-bola (banner, logo, ikon prize 1st/2nd/3rd)
+        src_lower = src.lower()
+        if any(bad in src_lower for bad in ["banner", "logo", "party", "casino", "titan", "noble", "header", "1st", "2nd", "3rd", "st.", "nd.", "rd."]):
             continue
             
-        digit = get_digit_from_src(src)
-        if digit is not None:
-            balls.append(digit)
+        # Regex hanya mengambil file bola angka murni (contoh: 0.gif, ball_0.png, b0.png, /0.jpg)
+        match = re.search(r"(?:/|ball[s_-]?|^)(\d)\.(?:jpg|jpeg|png|gif)", src, re.IGNORECASE)
+        if match:
+            balls.append(match.group(1))
+        elif alt.isdigit() and len(alt) == 1:
+            balls.append(alt)
 
-    print(f"🔍 Digit bola result murni terdeteksi ({len(balls)} digit): {balls}")
+    print(f"🔍 Digit bola murni terdeteksi ({len(balls)} digit): {balls}")
 
     if len(balls) < 30:
-        raise RuntimeError(f"Gagal mengambil angka bola Sydney. Hanya ditemukan {len(balls)} digit.")
+        raise RuntimeError(f"Gagal memparsing bola Sydney. Terbaca {len(balls)} digit, butuh minimal 30.")
 
-    # Di website Sydney Pools Today:
-    # 1st Prize   = 6 digit pertama [0:6]
-    # 2nd Prize   = 6 digit kedua   [6:12]
-    # 3rd Prize   = 6 digit ketiga  [12:18]
-    # Starter     = 6 digit keempat [18:24]
-    # Consolation = 6 digit kelima  [24:30]
-    
-    first_6d = "".join(balls[0:6])
-    second_6d = "".join(balls[6:12])
-    third_6d = "".join(balls[12:18])
-    starter_6d = "".join(balls[18:24])
-    consolation_6d = "".join(balls[24:30])
+    # 3. AMBIL FORMAT 6D UTUH SESUAI TAMPILAN WEBSITE
+    first_6d = "".join(balls[0:6])       # 026929
+    second_6d = "".join(balls[6:12])     # 776745
+    third_6d = "".join(balls[12:18])    # 049712
+    starter_6d = "".join(balls[18:24])  # 657604
+    consolation_6d = "".join(balls[24:30]) # 072884
 
     return {
         "date": result_date,
-        "first": first_6d[-4:],        # 4D (6929)
-        "second": second_6d[-4:],      # 4D (7445)
-        "third": third_6d[-4:],        # 4D (7112)
-        "starter": starter_6d[-4:],    # 4D (6004)
-        "consolation": consolation_6d[-4:], # 4D (8884)
-        "first_full": first_6d,
-        "second_full": second_6d,
-        "third_full": third_6d,
+        "first_6d": first_6d,
+        "second_6d": second_6d,
+        "third_6d": third_6d,
+        "starter_6d": starter_6d,
+        "consolation_6d": consolation_6d,
     }
 
 
 def format_message(result):
-    return f"""🇦🇺 SYDNEY POOLS RESULT
+    return f"""🇦🇺 SYDNEY POOLS RESULT (6D)
 
 📅 {result['date']}
 
 🥇 1ST PRIZE
-{result['first']}
+{result['first_6d']}
 
 🥈 2ND PRIZE
-{result['second']}
+{result['second_6d']}
 
 🥉 3RD PRIZE
-{result['third']}
+{result['third_6d']}
 
 🍀 STARTER PRIZE
-{result['starter']}
+{result['starter_6d']}
 
 🎁 CONSOLATION
-{result['consolation']}"""
+{result['consolation_6d']}"""
 
 
 def send_telegram(message):
@@ -123,7 +109,7 @@ def send_telegram(message):
 
 def main():
     print("================================")
-    print("🇦🇺 SYDNEY POOLS BOT")
+    print("🇦🇺 SYDNEY POOLS BOT (6D)")
     print("================================")
     print("🌐 Mengambil data Sydney Pools...")
 
@@ -131,9 +117,9 @@ def main():
     result = extract_sydney(html)
 
     print(f"📅 Date: {result['date']}")
-    print(f"🥇 1st Prize (6D): {result['first_full']} -> 4D: {result['first']}")
-    print(f"🥈 2nd Prize (6D): {result['second_full']} -> 4D: {result['second']}")
-    print(f"🥉 3rd Prize (6D): {result['third_full']} -> 4D: {result['third']}")
+    print(f"🥇 1st Prize (6D): {result['first_6d']}")
+    print(f"🥈 2nd Prize (6D): {result['second_6d']}")
+    print(f"🥉 3rd Prize (6D): {result['third_6d']}")
 
     last_result = None
     if os.path.exists(STATE_FILE):
@@ -154,7 +140,7 @@ def main():
     with open(STATE_FILE, "w", encoding="utf-8") as f:
         json.dump(result, f, ensure_ascii=False, indent=2)
 
-    print("✅ Result Sydney Pools berhasil dikirim dan disimpan!")
+    print("✅ Result Sydney Pools 6D berhasil dikirim dan disimpan!")
 
 
 if __name__ == "__main__":
