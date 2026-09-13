@@ -27,20 +27,13 @@ def get_page():
     return response.text
 
 
-def extract_digits_from_element(element):
-    """Mengambil digit bola bernomor hanya dari dalam satu elemen baris/tabel tertentu."""
-    digits = []
-    for img in element.find_all("img"):
-        src = img.get("src") or img.get("data-src") or ""
-        alt = img.get("alt") or ""
-        
-        # Cari pola angka 0-9 pada nama file gambar
-        match = re.search(r"(\d)\.(?:jpg|jpeg|png|gif)", src, re.IGNORECASE)
-        if match:
-            digits.append(match.group(1))
-        elif alt.isdigit() and len(alt) == 1:
-            digits.append(alt)
-    return "".join(digits)
+def get_digit_from_src(src_path):
+    """Mengekstrak 1 digit angka dari nama file gambar bola (contoh: /images/b6.gif, 9.jpg, dll)."""
+    # Regex strict hanya ambil digit yang berdiri sendiri sebelum ekstensi file
+    match = re.search(r"(?:[^\d]|^)(\d)\.(?:jpg|jpeg|png|gif)", src_path, re.IGNORECASE)
+    if match:
+        return match.group(1)
+    return None
 
 
 def extract_sydney(html):
@@ -55,77 +48,48 @@ def extract_sydney(html):
     )
     result_date = date_match.group(0) if date_match else "Today"
 
-    prizes = {
-        "first": "",
-        "second": "",
-        "third": "",
-        "starter": "",
-        "consolation": ""
-    }
-
-    # 2. EKSTRAKSI BERDASARKAN BARIS TABEL (TR / DIV)
-    rows = soup.find_all(["tr", "div"])
-    
-    for row in rows:
-        row_text = row.get_text(" ", strip=True).lower()
+    # 2. CARI KUMPULAN BOLA HASIL RESULT
+    # Ambil semua tag <img> yang BUKAN banner/iklan
+    balls = []
+    for img in soup.find_all("img"):
+        src = img.get("src") or img.get("data-src") or ""
         
-        if "1st prize" in row_text and not prizes["first"]:
-            digits = extract_digits_from_element(row)
-            if len(digits) >= 6:
-                prizes["first"] = digits[:6]
+        # Filter iklan & header logo
+        if any(bad in src.lower() for bad in ["banner", "logo", "party", "casino", "titan", "noble", "header"]):
+            continue
+            
+        digit = get_digit_from_src(src)
+        if digit is not None:
+            balls.append(digit)
 
-        elif "2nd prize" in row_text and not prizes["second"]:
-            digits = extract_digits_from_element(row)
-            if len(digits) >= 6:
-                prizes["second"] = digits[:6]
+    print(f"🔍 Digit bola result murni terdeteksi ({len(balls)} digit): {balls}")
 
-        elif "3rd prize" in row_text and not prizes["third"]:
-            digits = extract_digits_from_element(row)
-            if len(digits) >= 6:
-                prizes["third"] = digits[:6]
+    if len(balls) < 30:
+        raise RuntimeError(f"Gagal mengambil angka bola Sydney. Hanya ditemukan {len(balls)} digit.")
 
-        elif "starter" in row_text and not prizes["starter"]:
-            digits = extract_digits_from_element(row)
-            if len(digits) >= 6:
-                prizes["starter"] = digits[:6]
+    # Di website Sydney Pools Today:
+    # 1st Prize   = 6 digit pertama [0:6]
+    # 2nd Prize   = 6 digit kedua   [6:12]
+    # 3rd Prize   = 6 digit ketiga  [12:18]
+    # Starter     = 6 digit keempat [18:24]
+    # Consolation = 6 digit kelima  [24:30]
+    
+    first_6d = "".join(balls[0:6])
+    second_6d = "".join(balls[6:12])
+    third_6d = "".join(balls[12:18])
+    starter_6d = "".join(balls[18:24])
+    consolation_6d = "".join(balls[24:30])
 
-        elif "consolation" in row_text and not prizes["consolation"]:
-            digits = extract_digits_from_element(row)
-            if len(digits) >= 6:
-                prizes["consolation"] = digits[:6]
-
-    # Fallback jika selector baris tidak menemukan secara spesifik
-    if not prizes["first"]:
-        all_digits = []
-        for img in soup.find_all("img"):
-            src = img.get("src") or ""
-            if any(bad in src.lower() for bad in ["banner", "logo", "party", "casino", "titan"]):
-                continue
-            match = re.search(r"(\d)\.(?:jpg|jpeg|png|gif)", src, re.IGNORECASE)
-            if match:
-                all_digits.append(match.group(1))
-
-        if len(all_digits) >= 30:
-            prizes["first"] = "".join(all_digits[0:6])
-            prizes["second"] = "".join(all_digits[6:12])
-            prizes["third"] = "".join(all_digits[12:18])
-            prizes["starter"] = "".join(all_digits[18:24])
-            prizes["consolation"] = "".join(all_digits[24:30])
-
-    if not prizes["first"] or len(prizes["first"]) < 6:
-        raise RuntimeError("Gagal memparsing angka Sydney Pools dengan tepat.")
-
-    # Ambil 4 digit terakhir (4D)
     return {
         "date": result_date,
-        "first": prizes["first"][-4:],
-        "second": prizes["second"][-4:],
-        "third": prizes["third"][-4:],
-        "starter": prizes["starter"][-4:],
-        "consolation": prizes["consolation"][-4:],
-        "first_full": prizes["first"],
-        "second_full": prizes["second"],
-        "third_full": prizes["third"],
+        "first": first_6d[-4:],        # 4D (6929)
+        "second": second_6d[-4:],      # 4D (7445)
+        "third": third_6d[-4:],        # 4D (7112)
+        "starter": starter_6d[-4:],    # 4D (6004)
+        "consolation": consolation_6d[-4:], # 4D (8884)
+        "first_full": first_6d,
+        "second_full": second_6d,
+        "third_full": third_6d,
     }
 
 
