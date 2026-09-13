@@ -39,7 +39,7 @@ def extract_sydney(html):
     )
     result_date = date_match.group(0) if date_match else "Today"
 
-    # 2. EKSTRAKSI ANGKA BOLA
+    # 2. EKSTRAKSI ANGKA BOLA MURNI
     digits = []
     for img in soup.find_all("img"):
         src = img.get("src") or img.get("data-src") or ""
@@ -47,7 +47,7 @@ def extract_sydney(html):
         src_lower = src.lower()
         
         # Filter kata kunci banner/iklan
-        if any(bad in src_lower for bad in ["banner", "party", "casino", "titan", "noble", "captain", "cleopatra", "virgin"]):
+        if any(bad in src_lower for bad in ["banner", "party", "casino", "titan", "noble", "captain", "cleopatra", "virgin", "header", "logo"]):
             continue
 
         match = re.search(r"(\d)\.(?:jpg|jpeg|png|gif)", src, re.IGNORECASE)
@@ -58,12 +58,13 @@ def extract_sydney(html):
 
     print(f"🔍 Total digit terdeteksi: {len(digits)}")
 
-    # 3. KOREKSI PERGESERAN DIGIT IKLAN ATAS
-    if len(digits) > 30:
-        digits = digits[-30:]
-
-    if len(digits) < 30:
-        raise RuntimeError(f"Gagal memparsing bola Sydney. Terbaca {len(digits)} digit, butuh minimal 30.")
+    # 3. AMBIL EXACT 30 DIMIT RESULT (5 PRIZE x 6 BOLA)
+    # Jika terdeteksi lebih dari 30 (karena iklan lolos), buang sisa digit di DEPAN (iklan)
+    if len(digits) >= 30:
+        # Ambil tepat 30 digit paling bawah yang merupakan tabel result asli
+        digits = digits[len(digits)-30:]
+    else:
+        raise RuntimeError(f"Gagal memparsing bola Sydney. Hanya terbaca {len(digits)} digit.")
 
     first_6d = "".join(digits[0:6])
     second_6d = "".join(digits[6:12])
@@ -120,8 +121,6 @@ def main():
 
     print(f"📅 Date: {result['date']}")
     print(f"🥇 1st Prize (6D): {result['first_6d']}")
-    print(f"🥈 2nd Prize (6D): {result['second_6d']}")
-    print(f"🥉 3rd Prize (6D): {result['third_6d']}")
 
     last_result = None
     if os.path.exists(STATE_FILE):
