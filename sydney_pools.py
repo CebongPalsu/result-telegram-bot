@@ -39,32 +39,40 @@ def extract_sydney(html):
     )
     result_date = date_match.group(0) if date_match else "Today"
 
-    # 2. EKSTRAKSI ANGKA BOLA MURNI
+    # 2. HANYA AMBIL GAMBAR BOLA DARI TABEL RESULT PERTAMA (LATEST/TODAY)
+    # Ini mencegah gambar dari result kemarin / banner ikut tersedot
+    main_container = soup.find("table") or soup.find("div", id=re.compile(r"content|main|result", re.I)) or soup
+
     digits = []
-    for img in soup.find_all("img"):
+    for img in main_container.find_all("img"):
         src = img.get("src") or img.get("data-src") or ""
         alt = img.get("alt") or ""
-        src_lower = src.lower()
         
-        # Filter kata kunci banner/iklan
-        if any(bad in src_lower for bad in ["banner", "party", "casino", "titan", "noble", "captain", "cleopatra", "virgin", "header", "logo"]):
-            continue
-
-        match = re.search(r"(\d)\.(?:jpg|jpeg|png|gif)", src, re.IGNORECASE)
+        # Ekstraksi angka murni file gambar bola (contoh: 0.gif, ball_0.png, 0.png)
+        match = re.search(r"(?:/|^|ball[s_-]?|b)(\d)\.(?:jpg|jpeg|png|gif)", src, re.IGNORECASE)
         if match:
             digits.append(match.group(1))
         elif alt.isdigit() and len(alt) == 1:
             digits.append(alt)
 
-    print(f"🔍 Total digit terdeteksi: {len(digits)}")
+    print(f"🔍 Digit bola di tabel utama terdeteksi: {len(digits)}")
 
-    # 3. AMBIL EXACT 30 DIMIT RESULT (5 PRIZE x 6 BOLA)
-    # Jika terdeteksi lebih dari 30 (karena iklan lolos), buang sisa digit di DEPAN (iklan)
+    # 3. KARENA KITA HANYA BACA TABEL UTAMA, KITA AMBIL 30 DIGIT PERTAMA DARI TABEL ITU
     if len(digits) >= 30:
-        # Ambil tepat 30 digit paling bawah yang merupakan tabel result asli
-        digits = digits[len(digits)-30:]
+        digits = digits[:30]
     else:
-        raise RuntimeError(f"Gagal memparsing bola Sydney. Hanya terbaca {len(digits)} digit.")
+        # Fallback jika struktur HTML beda: scan semua img tapi ambil 30 pertama yang valid
+        all_imgs = soup.find_all("img")
+        digits = []
+        for img in all_imgs:
+            src = img.get("src") or img.get("data-src") or ""
+            match = re.search(r"(?:/|^|ball[s_-]?|b)(\d)\.(?:jpg|jpeg|png|gif)", src, re.IGNORECASE)
+            if match:
+                digits.append(match.group(1))
+        digits = digits[:30]
+
+    if len(digits) < 30:
+        raise RuntimeError(f"Gagal memparsing bola Sydney. Terbaca {len(digits)} digit, butuh 30.")
 
     first_6d = "".join(digits[0:6])
     second_6d = "".join(digits[6:12])
