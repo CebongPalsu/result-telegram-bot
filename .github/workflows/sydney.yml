@@ -1,18 +1,13 @@
-name: Sydney Pools Bot Test
+name: Sydney Pools Bot
 
 on:
-  workflow_dispatch:
   schedule:
-    # Sydney result keluar sekitar jam 14:00 WIB (07:00 UTC)
-    - cron: '*/5 7-8 * * *'
+    - cron: '50 6 * * *' # Jam 13.50 WIB
+  workflow_dispatch:
 
 jobs:
   run-sydney:
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: write
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -25,19 +20,19 @@ jobs:
       - name: Install Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install requests beautifulsoup4
 
       - name: Run Sydney Script
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          CHAT_ID: ${{ secrets.CHAT_ID }}
         run: python sydney_pools.py
 
       - name: Commit and Push sydney_last_result.json
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add sydney_last_result.json
-          git diff --quiet && git diff --staged --quiet || (git commit -m "chore: update sydney_last_result.json [skip ci]" && git push)
+          if [ -f sydney_last_result.json ]; then
+            git add sydney_last_result.json
+            git diff --quiet && git diff --staged --quiet || (git commit -m "chore: update sydney_last_result.json [skip ci]" && git push)
+          fi
