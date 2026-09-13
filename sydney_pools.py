@@ -39,40 +39,40 @@ def extract_sydney(html):
     )
     result_date = date_match.group(0) if date_match else "Today"
 
-    # 2. HANYA AMBIL GAMBAR BOLA DARI TABEL RESULT PERTAMA (LATEST/TODAY)
-    # Ini mencegah gambar dari result kemarin / banner ikut tersedot
-    main_container = soup.find("table") or soup.find("div", id=re.compile(r"content|main|result", re.I)) or soup
-
+    # 2. EKSTRAKSI ANGKA BOLA MURNI (METODE STRICT FILENAME)
     digits = []
-    for img in main_container.find_all("img"):
+    for img in soup.find_all("img"):
         src = img.get("src") or img.get("data-src") or ""
-        alt = img.get("alt") or ""
+        src_lower = src.lower()
         
-        # Ekstraksi angka murni file gambar bola (contoh: 0.gif, ball_0.png, 0.png)
-        match = re.search(r"(?:/|^|ball[s_-]?|b)(\d)\.(?:jpg|jpeg|png|gif)", src, re.IGNORECASE)
+        # Abaikan banner iklan secara paksa
+        if any(bad in src_lower for bad in ["banner", "logo", "header", "casino", "party", "titan", "promo", "iklan"]):
+            continue
+
+        # Ambil murni nama file (misal: https://web.com/images/1.gif -> 1.gif)
+        filename = src_lower.split('/')[-1].split('?')[0]
+        
+        # Regex ini HANYA akan lolos jika nama file berupa angka tunggal (0.gif, ball1.png)
+        # Gambar seperti "promo2.jpg" atau "1st.gif" PASTI diblokir oleh regex ini
+        match = re.search(r"^(?:ball[s_-]?|b[-_]?)?(\d)\.(?:gif|png|jpg|jpeg)$", filename)
+        
         if match:
             digits.append(match.group(1))
-        elif alt.isdigit() and len(alt) == 1:
-            digits.append(alt)
+        else:
+            # Fallback aman jika angka disembunyikan di attribute alt="1"
+            alt = img.get("alt", "").strip()
+            if alt.isdigit() and len(alt) == 1:
+                # Pastikan ini bukan gambar logo "1st Prize"
+                if "1st" not in filename and "2nd" not in filename and "3rd" not in filename:
+                    digits.append(alt)
 
-    print(f"🔍 Digit bola di tabel utama terdeteksi: {len(digits)}")
+    print(f"🔍 Total digit bola murni terdeteksi di halaman: {len(digits)}")
 
-    # 3. KARENA KITA HANYA BACA TABEL UTAMA, KITA AMBIL 30 DIGIT PERTAMA DARI TABEL ITU
+    # 3. AMBIL 30 DIGIT PERTAMA KARENA RESULT HARI INI SELALU PALING ATAS
     if len(digits) >= 30:
         digits = digits[:30]
     else:
-        # Fallback jika struktur HTML beda: scan semua img tapi ambil 30 pertama yang valid
-        all_imgs = soup.find_all("img")
-        digits = []
-        for img in all_imgs:
-            src = img.get("src") or img.get("data-src") or ""
-            match = re.search(r"(?:/|^|ball[s_-]?|b)(\d)\.(?:jpg|jpeg|png|gif)", src, re.IGNORECASE)
-            if match:
-                digits.append(match.group(1))
-        digits = digits[:30]
-
-    if len(digits) < 30:
-        raise RuntimeError(f"Gagal memparsing bola Sydney. Terbaca {len(digits)} digit, butuh 30.")
+        raise RuntimeError(f"Gagal memparsing bola Sydney. Terbaca {len(digits)} digit, butuh minimal 30.")
 
     first_6d = "".join(digits[0:6])
     second_6d = "".join(digits[6:12])
@@ -129,6 +129,7 @@ def main():
 
     print(f"📅 Date: {result['date']}")
     print(f"🥇 1st Prize (6D): {result['first_6d']}")
+    print(f"🥈 2nd Prize (6D): {result['second_6d']}")
 
     last_result = None
     if os.path.exists(STATE_FILE):
